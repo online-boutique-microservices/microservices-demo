@@ -73,5 +73,5 @@ variable "github_org" {
 variable "github_app_repo" {
   type        = string
   description = "GitHub app repo name"
-  default     = "online-boutique-app"
+  default     = "microservices-demo"
 }

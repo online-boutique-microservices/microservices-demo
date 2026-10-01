@@ -3,6 +3,7 @@
 #   cp terraform.tfvars.example terraform.tfvars
 
 github_org         = "<YOUR_GITHUB_ORG>" # REQUIRED: your GitHub org/username
+github_app_repo     = "microservices-demo"
 
 # Infrastructure sizing (production-grade)
 node_instance_type = "t3.large"

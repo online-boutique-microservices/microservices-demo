@@ -2,7 +2,8 @@
 # Copy this file to terraform.tfvars and customize for your setup:
 #   cp terraform.tfvars.example terraform.tfvars
 
-github_org = "online-boutique-microservices" # REQUIRED: your GitHub org/username
+github_org      = "online-boutique-microservices" # REQUIRED: your GitHub org/username
+github_app_repo = "microservices-demo"
 
 # Infrastructure sizing (optimized for dev)
 node_instance_type = "t3.medium"

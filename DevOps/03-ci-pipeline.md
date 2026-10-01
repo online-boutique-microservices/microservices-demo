@@ -81,9 +81,9 @@ Trigger (push/PR)
 | **Tool** | Trivy (aquasecurity/trivy-action) |
 | **Scan type** | Filesystem (`fs`) |
 | **Target** | `./src` |
-| **Severity** | CRITICAL, HIGH |
-| **Exit code** | 1 (fail pipeline nếu tìm thấy) |
-| **Output** | SARIF → GitHub Security tab |
+| **Severity** | CRITICAL, HIGH (ignore-unfixed: true) |
+| **Exit code** | 0 (Audit mode: cảnh báo ra console log + GitHub Security tab, không block pipeline) |
+| **Output** | Table summary (console) + SARIF → GitHub Security tab |
 
 **Quét:**
 - Dependency vulnerabilities trong `go.sum`, `package-lock.json`, `requirements.txt`, `.csproj`

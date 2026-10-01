@@ -45,9 +45,9 @@ Layer 5: GitOps Security
 |:-----------|:--------|
 | **Stage** | Stage 3 (song song với Unit Tests) |
 | **Target** | `./src` (toàn bộ source code) |
-| **Severity** | CRITICAL, HIGH |
-| **Action khi phát hiện** | **Fail pipeline** (exit-code: 1) |
-| **Output** | SARIF → GitHub Security tab |
+| **Severity** | CRITICAL, HIGH (ignore-unfixed: true) |
+| **Action khi phát hiện** | **Cảnh báo & Audit** (exit-code: 0, hiển thị bảng tóm tắt và đẩy SARIF lên Security tab, không block pipeline) |
+| **Output** | Table summary trên console + SARIF report |
 
 **Quét các file:**
 - Go: `go.sum`

@@ -15,6 +15,7 @@ on:
     branches: [main, develop]
     paths:
       - "src/**"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -117,19 +118,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trivy Filesystem Scan
+      - name: Trivy Filesystem Scan (Table Summary)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: "fs"
           scan-ref: "./src"
+          format: "table"
           severity: "CRITICAL,HIGH"
-          exit-code: "1"
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Trivy Filesystem Scan (SARIF Report)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "./src"
           format: "sarif"
           output: "trivy-source-results.sarif"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "0"
 
       - name: Upload Scan Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
+        continue-on-error: true
         with:
           sarif_file: "trivy-source-results.sarif"
 

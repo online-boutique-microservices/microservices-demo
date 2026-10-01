@@ -1,29 +1,72 @@
+# ============================================================
+# OS & IDE
+# ============================================================
 .DS_Store
-.eclipse.buildship.core.prefs
-.gradle/
-.idea/
-.kubernetes-manifests-*/
-.project
-.skaffold-*.yaml
-.terraform.lock.hcl
-.terraform/*
-.venv/
-.vs/
+Thumbs.db
 .vscode/
+.idea/
+.vs/
+.eclipse.buildship.core.prefs
+.project
 *.iml
 *.ipr
 *.iws
-*.pyc
 *.swp
-*.tfstate*
-*.tfvars
 *~
+
+# ============================================================
+# Terraform
+# ============================================================
+# Provider binaries (thủ phạm gây file 685MB!)
+**/.terraform/
+.terraform.lock.hcl
+
+# State files (chứa sensitive data, lưu trên S3)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files (local dev only)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Plan output files
+*.tfplan
+tfplan
+
+# ============================================================
+# Application
+# ============================================================
+.gradle/
+.kubernetes-manifests-*/
+.skaffold-*.yaml
+.venv/
+*.pyc
 bin/
 build/
 Dockerfile.pip
 node_modules/
 obj/
 pkg/
-release/wi-kubernetes-manifests.yaml
 vendor/
+
+# ============================================================
+# Credentials & Secrets (NEVER commit these)
+# ============================================================
 gha-creds-*.json
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# ============================================================
+# Misc
+# ============================================================
+release/wi-kubernetes-manifests.yaml

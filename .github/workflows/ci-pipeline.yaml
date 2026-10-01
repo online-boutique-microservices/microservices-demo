@@ -1,0 +1,252 @@
+# ============================================================
+# CI Pipeline — GitHub Actions
+# Triggered on push/PR to build, test, scan, and deploy
+# microservices to AWS ECR + update GitOps config repo.
+# ============================================================
+
+name: "CI Pipeline"
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "src/**"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "src/**"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-1.amazonaws.com
+  CONFIG_REPO: ${{ github.repository_owner }}/online-boutique-config
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # Stage 1: Detect which services changed
+  # ═══════════════════════════════════════════════════════════
+  detect-changes:
+    name: "🔍 Detect Changed Services"
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.changes.outputs.services }}
+      has_changes: ${{ steps.changes.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: changes
+        name: Identify changed services
+        run: |
+          SERVICES=()
+          ALL_SERVICES="frontend cartservice checkoutservice productcatalogservice currencyservice paymentservice shippingservice emailservice recommendationservice adservice loadgenerator"
+
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null || echo "src/")
+          fi
+
+          for svc in $ALL_SERVICES; do
+            if echo "$CHANGED_FILES" | grep -q "src/${svc}/"; then
+              SERVICES+=("\"${svc}\"")
+            fi
+          done
+
+          # If no specific changes detected, build all
+          if [ ${#SERVICES[@]} -eq 0 ]; then
+            for svc in $ALL_SERVICES; do
+              SERVICES+=("\"${svc}\"")
+            done
+          fi
+
+          SERVICES_JSON="[$(IFS=,; echo "${SERVICES[*]}")]"
+          echo "services=${SERVICES_JSON}" >> $GITHUB_OUTPUT
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "📦 Changed services: ${SERVICES_JSON}"
+
+  # ═══════════════════════════════════════════════════════════
+  # Stage 2: Unit Tests
+  # ═══════════════════════════════════════════════════════════
+  test:
+    name: "🧪 Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: src/*/go.sum
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0"
+
+      - name: Go Unit Tests
+        run: |
+          for pkg in shippingservice productcatalogservice frontend/validator; do
+            echo "::group::🔬 Testing src/$pkg"
+            pushd "src/$pkg"
+            go test -v -race -coverprofile=coverage.out ./...
+            popd
+            echo "::endgroup::"
+          done
+
+      - name: C# Unit Tests
+        run: |
+          echo "::group::🔬 Testing cartservice"
+          dotnet test src/cartservice/ --verbosity normal
+          echo "::endgroup::"
+
+  # ═══════════════════════════════════════════════════════════
+  # Stage 3: Security Scan — Source Code
+  # ═══════════════════════════════════════════════════════════
+  security-scan:
+    name: "🛡️ Security Scan (Source)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy Filesystem Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "./src"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          format: "sarif"
+          output: "trivy-source-results.sarif"
+
+      - name: Upload Scan Results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-source-results.sarif"
+
+  # ═══════════════════════════════════════════════════════════
+  # Stage 4: Build + Push Docker Images to ECR
+  # ═══════════════════════════════════════════════════════════
+  build-push:
+    name: "🏗️ Build & Push — ${{ matrix.service }}"
+    needs: [detect-changes, test, security-scan]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+      fail-fast: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine Docker context path
+        id: ctx
+        run: |
+          if [ "${{ matrix.service }}" == "cartservice" ]; then
+            echo "path=src/cartservice/src" >> $GITHUB_OUTPUT
+          else
+            echo "path=src/${{ matrix.service }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and Push to ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.ctx.outputs.path }}
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/online-boutique/${{ matrix.service }}:sha-${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/online-boutique/${{ matrix.service }}:${{ github.ref_name }}-latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          provenance: false
+
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.ECR_REGISTRY }}/online-boutique/${{ matrix.service }}:sha-${{ github.sha }}"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          format: "table"
+
+  # ═══════════════════════════════════════════════════════════
+  # Stage 5: Update GitOps Config Repo (trigger ArgoCD)
+  # ═══════════════════════════════════════════════════════════
+  update-gitops:
+    name: "🚀 Update GitOps Manifests"
+    needs: [detect-changes, build-push]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Config Repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CONFIG_REPO }}
+          token: ${{ secrets.CONFIG_REPO_PAT }}
+          path: config-repo
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Determine target environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            echo "target=dev" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "target=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update image tags in ${{ steps.env.outputs.target }}
+        run: |
+          cd config-repo/envs/${{ steps.env.outputs.target }}
+          IMAGE_TAG="sha-${{ github.sha }}"
+          SERVICES='${{ needs.detect-changes.outputs.services }}'
+
+          for svc in $(echo "$SERVICES" | jq -r '.[]'); do
+            echo "📝 Updating ${svc} → ${IMAGE_TAG}"
+            kustomize edit set image \
+              "${svc}=${{ env.ECR_REGISTRY }}/online-boutique/${svc}:${IMAGE_TAG}"
+          done
+
+          echo ""
+          echo "📋 Updated kustomization.yaml:"
+          cat kustomization.yaml
+
+      - name: Commit and Push
+        run: |
+          cd config-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "ci(${{ steps.env.outputs.target }}): update images → sha-${{ github.sha }}
+
+          Source: ${{ github.repository }}@${{ github.sha }}
+          Branch: ${{ github.ref_name }}
+          Services: ${{ needs.detect-changes.outputs.services }}"
+          git push

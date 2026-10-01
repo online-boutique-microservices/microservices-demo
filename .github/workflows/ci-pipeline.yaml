@@ -16,6 +16,25 @@ on:
     paths:
       - "src/**"
   workflow_dispatch:
+    inputs:
+      service:
+        description: "Chọn service cần build ('all' = toàn bộ 11 microservices)"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - frontend
+          - cartservice
+          - checkoutservice
+          - productcatalogservice
+          - currencyservice
+          - paymentservice
+          - shippingservice
+          - emailservice
+          - recommendationservice
+          - adservice
+          - loadgenerator
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -51,20 +70,46 @@ jobs:
           SERVICES=()
           ALL_SERVICES="frontend cartservice checkoutservice productcatalogservice currencyservice paymentservice shippingservice emailservice recommendationservice adservice loadgenerator"
 
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
+          # 1. Trigger thủ công qua workflow_dispatch
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            SELECTED="${{ inputs.service }}"
+            if [ "$SELECTED" == "all" ] || [ -z "$SELECTED" ]; then
+              echo "🚀 Manual trigger: Building ALL 11 services"
+              for svc in $ALL_SERVICES; do
+                SERVICES+=("\"${svc}\"")
+              done
+            else
+              echo "🚀 Manual trigger: Building single service ${SELECTED}"
+              SERVICES+=("\"${SELECTED}\"")
+            fi
+
+          # 2. Commit message chứa cờ [build-all]
+          elif echo "${{ github.event.head_commit.message }}" | grep -qi "\[build-all\]"; then
+            echo "🚀 Commit flag [build-all] detected: Building ALL 11 services"
+            for svc in $ALL_SERVICES; do
+              SERVICES+=("\"${svc}\"")
+            done
+
+          # 3. Phân tích git diff thông thường
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
             CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+            for svc in $ALL_SERVICES; do
+              if echo "$CHANGED_FILES" | grep -q "src/${svc}/"; then
+                SERVICES+=("\"${svc}\"")
+              fi
+            done
           else
             CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null || echo "src/")
+            for svc in $ALL_SERVICES; do
+              if echo "$CHANGED_FILES" | grep -q "src/${svc}/"; then
+                SERVICES+=("\"${svc}\"")
+              fi
+            done
           fi
 
-          for svc in $ALL_SERVICES; do
-            if echo "$CHANGED_FILES" | grep -q "src/${svc}/"; then
-              SERVICES+=("\"${svc}\"")
-            fi
-          done
-
-          # If no specific changes detected, build all
+          # Fallback: nếu danh sách rỗng, build toàn bộ
           if [ ${#SERVICES[@]} -eq 0 ]; then
+            echo "📦 No specific service matched, defaulting to ALL services"
             for svc in $ALL_SERVICES; do
               SERVICES+=("\"${svc}\"")
             done
@@ -73,7 +118,7 @@ jobs:
           SERVICES_JSON="[$(IFS=,; echo "${SERVICES[*]}")]"
           echo "services=${SERVICES_JSON}" >> $GITHUB_OUTPUT
           echo "has_changes=true" >> $GITHUB_OUTPUT
-          echo "📦 Changed services: ${SERVICES_JSON}"
+          echo "📦 Final services to build: ${SERVICES_JSON}"
 
   # ═══════════════════════════════════════════════════════════
   # Stage 2: Unit Tests

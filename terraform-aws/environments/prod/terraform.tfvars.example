@@ -1,0 +1,16 @@
+# Production environment — Example configuration template
+# Copy this file to terraform.tfvars and customize for your setup:
+#   cp terraform.tfvars.example terraform.tfvars
+
+github_org         = "<YOUR_GITHUB_ORG>" # REQUIRED: your GitHub org/username
+
+# Infrastructure sizing (production-grade)
+node_instance_type = "t3.large"
+capacity_type      = "ON_DEMAND"
+desired_nodes      = 3
+min_nodes          = 3
+max_nodes          = 8
+
+# Redis — use managed ElastiCache for production
+create_elasticache = true
+redis_node_type    = "cache.t3.small"

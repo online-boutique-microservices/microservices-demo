@@ -1,0 +1,15 @@
+# Dev environment — Example configuration template
+# Copy this file to terraform.tfvars and customize for your setup:
+#   cp terraform.tfvars.example terraform.tfvars
+
+github_org = "online-boutique-microservices" # REQUIRED: your GitHub org/username
+
+# Infrastructure sizing (optimized for dev)
+node_instance_type = "t3.medium"
+capacity_type      = "SPOT" # Save ~60% on EC2 costs
+desired_nodes      = 3
+min_nodes          = 2
+max_nodes          = 4
+
+# Redis — use in-cluster Redis for dev (free)
+create_elasticache = false

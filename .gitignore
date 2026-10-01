@@ -21,6 +21,11 @@ Thumbs.db
 **/.terraform/
 .terraform.lock.hcl
 
+# Variable files (có thể chứa thông tin nhạy cảm / secrets)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
 # State files (chứa sensitive data, lưu trên S3)
 *.tfstate
 *.tfstate.*
